@@ -55,6 +55,7 @@ export const schemas = {
   }),
 
   reserveTicket: z.object({
+    userId: z.string().uuid('Invalid user ID').optional(), // Optional for service-to-service calls
     routeId: z.string().uuid('Invalid route ID'),
     scheduleId: z.string().uuid('Invalid schedule ID'),
     seatNumber: z.string().max(10).optional(),
@@ -73,6 +74,7 @@ export const schemas = {
 
   cancelTicket: z.object({
     bookingId: z.string().uuid('Invalid booking ID'),
+    userId: z.string().uuid('Invalid user ID').optional(), // Optional for service-to-service calls
     reason: z.string().max(500).optional(),
   }),
 

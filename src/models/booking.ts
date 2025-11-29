@@ -83,7 +83,7 @@ export interface ConfirmTicketCommand {
 
 export interface CancelTicketCommand {
   bookingId: string;
-  userId: string;
+  userId?: string; // Optional - can be obtained from booking for service-to-service calls
   reason?: string;
 }
 

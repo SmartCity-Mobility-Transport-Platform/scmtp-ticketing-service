@@ -1,7 +1,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { StatusCodes } from 'http-status-codes';
 import { v4 as uuidv4 } from 'uuid';
-import { authenticate } from '../middleware/auth';
+import { authenticate, optionalAuth } from '../middleware/auth';
 import { validate, schemas } from '../middleware/validate';
 import {
   bookTicketHandler,
@@ -58,18 +58,29 @@ router.post(
 /**
  * POST /tickets/commands/reserve
  * Reserve a ticket (for saga - payment service calls this)
+ * Supports both authenticated user calls and service-to-service calls
  */
 router.post(
   '/reserve',
-  authenticate,
+  optionalAuth, // Allow service-to-service calls without auth
   validate(schemas.reserveTicket),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const correlationId = (req.headers['x-correlation-id'] as string) || uuidv4();
+      
+      // Get userId from authenticated user or from request body (for service-to-service calls)
+      const userId = req.user?.userId || req.body.userId;
+      
+      if (!userId) {
+        return res.status(StatusCodes.BAD_REQUEST).json({
+          success: false,
+          error: 'userId is required (either from authentication token or request body)'
+        });
+      }
 
       const result = await reserveTicketHandler(
         {
-          userId: req.user!.userId,
+          userId: userId,
           routeId: req.body.routeId,
           scheduleId: req.body.scheduleId,
           seatNumber: req.body.seatNumber,
@@ -86,7 +97,7 @@ router.post(
       logger.info('Ticket reserved', { 
         bookingId: result.booking.id, 
         expiresAt: result.expiresAt,
-        userId: req.user!.userId 
+        userId: userId 
       });
 
       res.status(StatusCodes.CREATED).json({
@@ -108,10 +119,11 @@ router.post(
 /**
  * POST /tickets/commands/confirm
  * Confirm a reserved ticket (for saga - after payment success)
+ * Supports both authenticated user calls and service-to-service calls
  */
 router.post(
   '/confirm',
-  authenticate,
+  optionalAuth, // Allow service-to-service calls without auth
   validate(schemas.confirmTicket),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -128,7 +140,7 @@ router.post(
       logger.info('Ticket confirmed', { 
         bookingId: result.booking.id, 
         paymentId: req.body.paymentId,
-        userId: req.user!.userId 
+        userId: req.user?.userId || 'service-call'
       });
 
       res.status(StatusCodes.OK).json({
@@ -147,19 +159,24 @@ router.post(
 /**
  * POST /tickets/commands/cancel
  * Cancel a ticket
+ * Supports both authenticated user calls and service-to-service calls
  */
 router.post(
   '/cancel',
-  authenticate,
+  optionalAuth, // Allow service-to-service calls without auth
   validate(schemas.cancelTicket),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const correlationId = (req.headers['x-correlation-id'] as string) || uuidv4();
+      
+      // Get userId from authenticated user or from request body (for service-to-service calls)
+      // If not provided, the handler will get it from the booking itself
+      const userId = req.user?.userId || req.body.userId;
 
       const result = await cancelTicketHandler(
         {
           bookingId: req.body.bookingId,
-          userId: req.user!.userId,
+          userId: userId!,
           reason: req.body.reason,
         },
         correlationId
@@ -168,7 +185,7 @@ router.post(
       logger.info('Ticket cancelled', { 
         bookingId: result.booking.id, 
         refundAmount: result.refundAmount,
-        userId: req.user!.userId 
+        userId: userId
       });
 
       res.status(StatusCodes.OK).json({

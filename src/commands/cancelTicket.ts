@@ -38,8 +38,15 @@ export const cancelTicketHandler = async (
 
     const existingBooking = currentBooking.rows[0];
 
-    // Verify user owns this booking
-    if (existingBooking.user_id !== command.userId) {
+    // For service-to-service calls, userId might not be provided - get it from booking
+    const actualUserId = command.userId || existingBooking.user_id;
+    
+    if (!actualUserId) {
+      throw new BadRequestError('userId is required');
+    }
+
+    // Verify user owns this booking (skip for service-to-service calls if userId matches booking)
+    if (command.userId && existingBooking.user_id !== command.userId) {
       throw new ForbiddenError('You are not authorized to cancel this booking');
     }
 
@@ -98,7 +105,7 @@ export const cancelTicketHandler = async (
         'Booking',
         JSON.stringify({
           bookingId: command.bookingId,
-          userId: command.userId,
+          userId: actualUserId,
           reason: command.reason,
           cancelledAt: now.toISOString(),
           refundAmount,
@@ -108,8 +115,10 @@ export const cancelTicketHandler = async (
       ]
     );
 
+    const booking = mapRowToBooking(updateResult.rows[0]);
+    
     return {
-      booking: mapRowToBooking(updateResult.rows[0]),
+      booking,
       refundAmount,
     };
   });
@@ -139,9 +148,7 @@ function validateCancelTicketCommand(command: CancelTicketCommand): void {
   if (!command.bookingId) {
     throw new BadRequestError('bookingId is required');
   }
-  if (!command.userId) {
-    throw new BadRequestError('userId is required');
-  }
+  // userId is optional - can be obtained from booking for service-to-service calls
 }
 
 function mapRowToBooking(row: Record<string, unknown>): Booking {

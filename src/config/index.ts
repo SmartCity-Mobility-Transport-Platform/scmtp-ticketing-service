@@ -13,18 +13,18 @@ export const config = {
   // PostgreSQL Write Database
   writeDb: {
     host: process.env.POSTGRES_WRITE_HOST || 'localhost',
-    port: parseInt(process.env.POSTGRES_WRITE_PORT || '5432', 10),
-    user: process.env.POSTGRES_WRITE_USER || 'postgres',
-    password: process.env.POSTGRES_WRITE_PASSWORD || 'postgres',
+    port: parseInt(process.env.POSTGRES_WRITE_PORT || '5435', 10),
+    user: process.env.POSTGRES_WRITE_USER || 'scmtp',
+    password: process.env.POSTGRES_WRITE_PASSWORD || 'scmtp',
     database: process.env.POSTGRES_WRITE_DB || 'ticketing_write',
   },
 
   // PostgreSQL Read Database (CQRS)
   readDb: {
     host: process.env.POSTGRES_READ_HOST || 'localhost',
-    port: parseInt(process.env.POSTGRES_READ_PORT || '5432', 10),
-    user: process.env.POSTGRES_READ_USER || 'postgres',
-    password: process.env.POSTGRES_READ_PASSWORD || 'postgres',
+    port: parseInt(process.env.POSTGRES_READ_PORT || '5435', 10),
+    user: process.env.POSTGRES_READ_USER || 'scmtp',
+    password: process.env.POSTGRES_READ_PASSWORD || 'scmtp',
     database: process.env.POSTGRES_READ_DB || 'ticketing_read',
   },
 
@@ -44,7 +44,7 @@ export const config = {
 
   // JWT
   jwt: {
-    secret: process.env.JWT_SECRET || 'default-secret-change-me',
+    secret: process.env.JWT_SECRET || 'dev-secret-change-me',
     issuer: process.env.JWT_ISSUER || 'scmtp-user-service',
   },
 
