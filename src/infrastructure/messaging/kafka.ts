@@ -3,16 +3,25 @@ import { config } from '../../config';
 import logger from '../../utils/logger';
 import { DomainEvent, KAFKA_TOPICS } from '../../events/types';
 
-// Kafka client instance
-const kafka = new Kafka({
-  clientId: config.kafka.clientId,
-  brokers: config.kafka.brokers,
-  logLevel: logLevel.WARN,
-  retry: {
-    initialRetryTime: 100,
-    retries: 8,
-  },
-});
+// Lazy-initialized Kafka client to ensure config is fully loaded
+let kafkaInstance: Kafka | null = null;
+
+const getKafka = (): Kafka => {
+  if (!kafkaInstance) {
+    const brokers = (process.env.KAFKA_BROKERS || config.kafka.brokers.join(',')).split(',');
+    logger.info('Initializing Kafka client', { brokers, clientId: config.kafka.clientId });
+    kafkaInstance = new Kafka({
+      clientId: config.kafka.clientId,
+      brokers: brokers,
+      logLevel: logLevel.WARN,
+      retry: {
+        initialRetryTime: 100,
+        retries: 8,
+      },
+    });
+  }
+  return kafkaInstance;
+};
 
 let producer: Producer | null = null;
 let consumer: Consumer | null = null;
@@ -23,6 +32,7 @@ export const getProducer = async (): Promise<Producer> => {
     return producer;
   }
 
+  const kafka = getKafka();
   producer = kafka.producer({
     allowAutoTopicCreation: true,
     transactionTimeout: 30000,
@@ -107,6 +117,7 @@ export const createConsumer = async (
   topics: string[],
   handler: MessageHandler
 ): Promise<Consumer> => {
+  const kafka = getKafka();
   consumer = kafka.consumer({ groupId });
 
   await consumer.connect();
@@ -156,6 +167,7 @@ export const disconnectKafka = async (): Promise<void> => {
 
 // Admin operations (for topic management)
 export const createTopics = async (topics: string[]): Promise<void> => {
+  const kafka = getKafka();
   const admin = kafka.admin();
   
   try {
@@ -179,5 +191,5 @@ export const createTopics = async (topics: string[]): Promise<void> => {
   }
 };
 
-export { kafka, KAFKA_TOPICS };
+export { getKafka as kafka, KAFKA_TOPICS };
 

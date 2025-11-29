@@ -1,8 +1,8 @@
 import dotenv from 'dotenv';
 import path from 'path';
 
-// Load environment variables
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+// Load environment variables (don't override existing env vars)
+dotenv.config({ path: path.resolve(__dirname, '../../.env'), override: false });
 
 export const config = {
   // Server
