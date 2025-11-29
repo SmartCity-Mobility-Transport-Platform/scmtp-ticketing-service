@@ -1,0 +1,191 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ticketing-service
+  namespace: scmtp
+  labels:
+    app: ticketing-service
+    version: v1
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: ticketing-service
+  template:
+    metadata:
+      labels:
+        app: ticketing-service
+        version: v1
+    spec:
+      containers:
+        - name: ticketing-service
+          image: scmtp/ticketing-service:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 3002
+              name: http
+          env:
+            - name: NODE_ENV
+              value: "production"
+            - name: PORT
+              value: "3002"
+            - name: HOST
+              value: "0.0.0.0"
+            # Write Database
+            - name: POSTGRES_WRITE_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: ticketing-config
+                  key: postgres-write-host
+            - name: POSTGRES_WRITE_PORT
+              value: "5432"
+            - name: POSTGRES_WRITE_USER
+              valueFrom:
+                secretKeyRef:
+                  name: ticketing-secrets
+                  key: postgres-write-user
+            - name: POSTGRES_WRITE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: ticketing-secrets
+                  key: postgres-write-password
+            - name: POSTGRES_WRITE_DB
+              value: "ticketing_write"
+            # Read Database
+            - name: POSTGRES_READ_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: ticketing-config
+                  key: postgres-read-host
+            - name: POSTGRES_READ_PORT
+              value: "5432"
+            - name: POSTGRES_READ_USER
+              valueFrom:
+                secretKeyRef:
+                  name: ticketing-secrets
+                  key: postgres-read-user
+            - name: POSTGRES_READ_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: ticketing-secrets
+                  key: postgres-read-password
+            - name: POSTGRES_READ_DB
+              value: "ticketing_read"
+            # Redis
+            - name: REDIS_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: ticketing-config
+                  key: redis-host
+            - name: REDIS_PORT
+              value: "6379"
+            # Kafka
+            - name: KAFKA_BROKERS
+              valueFrom:
+                configMapKeyRef:
+                  name: ticketing-config
+                  key: kafka-brokers
+            - name: KAFKA_CLIENT_ID
+              value: "ticketing-service"
+            - name: KAFKA_GROUP_ID
+              value: "ticketing-service-group"
+            # JWT
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: ticketing-secrets
+                  key: jwt-secret
+            - name: JWT_ISSUER
+              value: "scmtp-user-service"
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          livenessProbe:
+            httpGet:
+              path: /api/health/live
+              port: 3002
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /api/health/ready
+              port: 3002
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+      restartPolicy: Always
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ticketing-service
+  namespace: scmtp
+  labels:
+    app: ticketing-service
+spec:
+  type: ClusterIP
+  ports:
+    - port: 3002
+      targetPort: 3002
+      protocol: TCP
+      name: http
+  selector:
+    app: ticketing-service
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ticketing-config
+  namespace: scmtp
+data:
+  postgres-write-host: "postgres-write.scmtp.svc.cluster.local"
+  postgres-read-host: "postgres-read.scmtp.svc.cluster.local"
+  redis-host: "redis.scmtp.svc.cluster.local"
+  kafka-brokers: "kafka.scmtp.svc.cluster.local:9092"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ticketing-secrets
+  namespace: scmtp
+type: Opaque
+stringData:
+  postgres-write-user: "postgres"
+  postgres-write-password: "your-secure-password"
+  postgres-read-user: "postgres"
+  postgres-read-password: "your-secure-password"
+  jwt-secret: "your-super-secret-jwt-key"
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: ticketing-service-hpa
+  namespace: scmtp
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: ticketing-service
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+

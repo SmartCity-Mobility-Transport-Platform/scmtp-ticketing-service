@@ -1,0 +1,178 @@
+version: '3.8'
+
+services:
+  # Ticketing Service
+  ticketing-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: scmtp-ticketing-service
+    ports:
+      - "3002:3002"
+    environment:
+      - NODE_ENV=development
+      - PORT=3002
+      - HOST=0.0.0.0
+      # Write Database
+      - POSTGRES_WRITE_HOST=postgres-write
+      - POSTGRES_WRITE_PORT=5432
+      - POSTGRES_WRITE_USER=postgres
+      - POSTGRES_WRITE_PASSWORD=postgres
+      - POSTGRES_WRITE_DB=ticketing_write
+      # Read Database
+      - POSTGRES_READ_HOST=postgres-read
+      - POSTGRES_READ_PORT=5432
+      - POSTGRES_READ_USER=postgres
+      - POSTGRES_READ_PASSWORD=postgres
+      - POSTGRES_READ_DB=ticketing_read
+      # Redis
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      # Kafka
+      - KAFKA_BROKERS=kafka:29092
+      - KAFKA_CLIENT_ID=ticketing-service
+      - KAFKA_GROUP_ID=ticketing-service-group
+      # JWT
+      - JWT_SECRET=your-super-secret-jwt-key-change-in-production
+      - JWT_ISSUER=scmtp-user-service
+    depends_on:
+      postgres-write:
+        condition: service_healthy
+      postgres-read:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    networks:
+      - scmtp-network
+    restart: unless-stopped
+
+  # PostgreSQL Write Database
+  postgres-write:
+    image: postgres:15-alpine
+    container_name: scmtp-postgres-write
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=ticketing_write
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-write-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - scmtp-network
+
+  # PostgreSQL Read Database (CQRS)
+  postgres-read:
+    image: postgres:15-alpine
+    container_name: scmtp-postgres-read
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=ticketing_read
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres-read-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - scmtp-network
+
+  # Redis for caching
+  redis:
+    image: redis:7-alpine
+    container_name: scmtp-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - scmtp-network
+
+  # Zookeeper (required for Kafka)
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: scmtp-zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+    volumes:
+      - zookeeper-data:/var/lib/zookeeper/data
+      - zookeeper-log:/var/lib/zookeeper/log
+    networks:
+      - scmtp-network
+
+  # Kafka Message Broker
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: scmtp-kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+      - "29092:29092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics --bootstrap-server localhost:9092 --list || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    networks:
+      - scmtp-network
+
+  # Kafka UI (optional - for debugging)
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: scmtp-kafka-ui
+    depends_on:
+      - kafka
+    ports:
+      - "8080:8080"
+    environment:
+      - KAFKA_CLUSTERS_0_NAME=scmtp-local
+      - KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS=kafka:29092
+      - KAFKA_CLUSTERS_0_ZOOKEEPER=zookeeper:2181
+    networks:
+      - scmtp-network
+
+networks:
+  scmtp-network:
+    driver: bridge
+
+volumes:
+  postgres-write-data:
+  postgres-read-data:
+  redis-data:
+  zookeeper-data:
+  zookeeper-log:
+  kafka-data:
+
